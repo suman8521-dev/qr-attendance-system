@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Smart Attendance System</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family:'Inter',sans-serif;}
+
+        body{
+            background:#0b1220;
+            color:#fff;
+        }
+
+        /* HEADER */
+        .header{
+            padding:20px;
+            text-align:center;
+            font-size:22px;
+            font-weight:700;
+            background:linear-gradient(90deg,#0ea5e9,#6366f1);
+        }
+
+        /* LOGIN */
+        .login{
+            text-align:center;
+            margin-top:60px;
+        }
+
+        .login input{
+            padding:12px;
+            margin:6px;
+            width:250px;
+            border-radius:8px;
+            border:none;
+        }
+
+        .login button{
+            padding:12px 20px;
+            background:#38bdf8;
+            border:none;
+            border-radius:8px;
+            cursor:pointer;
+        }
+
+        /* DASHBOARD */
+        .container{
+            display:flex;
+            gap:20px;
+            padding:20px;
+        }
+
+        .left,.right{
+            background:rgba(255,255,255,0.05);
+            border-radius:15px;
+            padding:20px;
+            backdrop-filter:blur(10px);
+        }
+
+        .left{flex:1;}
+        .right{flex:2;}
+
+        .qrBox{
+            text-align:center;
+        }
+
+        .qrBox img{
+            width:230px;
+            height:230px;
+            border-radius:12px;
+            border:3px solid #38bdf8;
+            background:white;
+            margin-top:10px;
+        }
+
+        button{
+            margin-top:10px;
+            padding:10px 15px;
+            border:none;
+            background:#38bdf8;
+            border-radius:8px;
+            cursor:pointer;
+        }
+
+        .logout{
+            background:#ef4444;
+            color:white;
+        }
+
+        /* CARDS */
+        .card{
+            background:rgba(255,255,255,0.08);
+            padding:15px;
+            border-radius:10px;
+            margin-bottom:10px;
+            border-left:4px solid #22c55e;
+            animation:fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn{
+            from{opacity:0;transform:translateY(10px);}
+            to{opacity:1;transform:translateY(0);}
+        }
+
+        .status{
+            color:#22c55e;
+            font-weight:bold;
+        }
+
+        .hidden{display:none;}
+    </style>
+</head>
+
+<body>
+
+<div class="header">🎓 Smart Attendance Dashboard</div>
+
+<!-- LOGIN -->
+<div id="loginBox" class="login">
+    <h2>Login</h2>
+    <input id="email" placeholder="Email"><br>
+    <input id="password" type="password" placeholder="Password"><br>
+    <button onclick="login()">Login</button>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard" class="hidden">
+
+    <div class="container">
+
+        <div class="left">
+            <h3>📲 QR Generator</h3>
+
+            <div class="qrBox">
+                <img id="qrImage"/>
+                <br>
+                <button onclick="generateQR()">Generate QR</button>
+                <br>
+                <button class="logout" onclick="logout()">Logout</button>
+            </div>
+        </div>
+
+        <div class="right">
+            <h3>🔥 Live Attendance</h3>
+            <div id="list"></div>
+        </div>
+
+    </div>
+</div>
+
+<!-- SOCKET -->
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+
+<script>
+
+    let stompClient;
+
+    /* ================= LOGIN ================= */
+    function login(){
+
+        fetch("http://localhost:8089/api/v1/auth/authenticate",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({
+                email:document.getElementById("email").value,
+                password:document.getElementById("password").value
+            })
+        })
+        .then(res=>res.json())
+        .then(data=>{
+
+            console.log("LOGIN RESPONSE:", data);
+
+            const token = data.access_token; // ✅ FIXED
+
+            if(!token){
+                alert("Token missing in response");
+                return;
+            }
+
+            localStorage.setItem("token", token);
+
+            showDashboard();
+        })
+        .catch(()=>alert("Login failed"));
+    }
+
+    /* ================= SHOW DASHBOARD ================= */
+    function showDashboard(){
+        document.getElementById("loginBox").classList.add("hidden");
+        document.getElementById("dashboard").classList.remove("hidden");
+
+        initDashboard();
+    }
+
+    /* ================= SOCKET ================= */
+    function connect(){
+
+        let socket = new SockJS("http://localhost:8089/ws");
+        stompClient = Stomp.over(socket);
+
+        stompClient.connect({}, function (){
+
+            console.log("✅ WebSocket Connected");
+
+            stompClient.subscribe("/topic/attendance", function(msg){
+
+                let data = JSON.parse(msg.body);
+
+                let div=document.createElement("div");
+                div.className="card";
+  div.innerHTML = `
+                <b>🎓 ${a.studentEmail}</b><br>
+                📚 ${a.classId}<br>
+                <span class="status">✔ ${a.status}</span><br>
+                ⏱ ${a.time}
+            `;
+
+                document.getElementById("list").prepend(div);
+            });
+        }, function(err){
+            console.error("WebSocket error:", err);
+        });
+    }
+
+    /* ================= QR ================= */
+    function generateQR(){
+
+        const token = localStorage.getItem("token");
+
+        if(!token){
+            alert("Login required");
+            logout();
+            return;
+        }
+
+        fetch("http://localhost:8089/api/v1/admin/generate/Math 101Aa",{
+            method:"GET",
+            headers:{
+                "Authorization":"Bearer "+token
+            }
+        })
+        .then(res=>{
+
+            if(res.status===401){
+                alert("Unauthorized (Admin only)");
+                logout();
+                return;
+            }
+
+            return res.blob();
+        })
+        .then(blob=>{
+            if(!blob) return;
+            document.getElementById("qrImage").src = URL.createObjectURL(blob);
+        })
+        .catch(err=>{
+            console.error(err);
+            alert("QR generation failed");
+        });
+    }
+
+    /* ================= INIT ================= */
+    function initDashboard(){
+        connect();
+         loadOldAttendance();
+        generateQR();
+
+        setInterval(generateQR,30000); // auto refresh
+    }
+
+    /* ================= AUTO LOGIN ================= */
+    window.onload = function(){
+
+        const token = localStorage.getItem("token");
+
+        if(token){
+            showDashboard();
+        }
+    }
+
+    function loadOldAttendance(){
+
+    const token = localStorage.getItem("token");
+
+    fetch("http://localhost:8089/api/v1/admin/attendance/Math 101A", {
+        headers:{
+            "Authorization":"Bearer "+token
+        }
+    })
+    .then(res=>res.json())
+    .then(data=>{
+
+        data.forEach(a => {
+
+            let div = document.createElement("div");
+            div.className = "card";
+
+            div.innerHTML = `
+                <b>🎓 ${a.studentEmail}</b><br>
+                📚 ${a.classId}<br>
+                <span class="status">✔ ${a.status}</span><br>
+                ⏱ ${a.time}
+            `;
+
+            document.getElementById("list").appendChild(div);
+        });
+
+    });
+}
+
+    /* ================= LOGOUT ================= */
+    function logout(){
+        localStorage.removeItem("token");
+        location.reload();
+    }
+
+</script>
+
+</body>
+</html>
